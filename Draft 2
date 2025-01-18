@@ -1,0 +1,294 @@
+import math
+import time
+import numpy as np
+import tkinter as tk
+import turtle as turtle
+import statistics 
+
+def initial_instruction():
+    print("Welcome to the roller coaster simulator! Draw any outline in the shape of the roller coaster you want to simulate. Please draw in one brush (do not use multiple strokes or breaks. The slower you draw, the more accurate the simulation will be. Please click 'Enter' once you are done drawing. The simulator will indicate how much force the passenger will feel while on the roller coaster, and the approximate percentage of passengers alive at the end of the ride. Enjoy!")
+
+class DrawingApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Drawing App")
+
+        self.canvas = tk.Canvas(root, width=800, height=600, bg="white")
+        self.canvas.pack()
+
+        self.last_x, self.last_y = None, None
+
+        self.canvas.bind("<Button-1>", self.start_drawing)
+        self.canvas.bind("<B1-Motion>", self.draw)
+        self.canvas.bind("<ButtonRelease-1>", self.stop_drawing) 
+        self.root.bind("<Return>", self.finish_drawing)
+
+        self.min_x = float('inf')
+        self.max_x = float('-inf')
+        self.min_y = float('inf')
+        self.max_y = float('-inf')
+
+    def listsave(self): 
+        return self.points
+
+    def start_drawing(self, event):
+        self.last_x, self.last_y = event.x, event.y 
+        self.points = [(event.x, -1*event.y)]
+
+    def draw(self, event):
+        x_list = []
+        y_list = []
+        if self.last_x is not None and self.last_y is not None:
+            self.canvas.create_line(self.last_x, self.last_y, event.x, event.y, fill="black", width=2)
+            self.last_x, self.last_y = event.x, event.y 
+            self.points.append((event.x, -1*event.y))
+            
+            self.min_x = min(self.min_x, event.x)
+            self.max_x = max(self.max_x, event.x)
+            self.min_y = min(self.min_y, -1*event.y)
+            self.max_y = max(self.max_y, -1*event.y)
+        return x_list, y_list
+
+    def stop_drawing(self, event):
+        print(self.points)
+        self.last_x, self.last_y = None, None
+        
+    def finish_drawing(self, event): 
+        self.root.destroy()
+
+    def get_drawing_bounds(self):
+        return self.min_x, self.max_x, self.min_y, self.max_y
+
+def remove_outliers(ilist):
+    mean = np.mean(ilist)
+    std_dev = np.std(ilist)
+    threshold = 2 * std_dev
+    return [x for x in ilist if abs(x - mean) <= threshold]
+
+class Sketch:
+    def maxheight(self, pointlist, totalheight): 
+        y_list = []
+        for element in pointlist: 
+            y_list.append(element[1])
+        return max(y_list)
+
+    def minheight(self, pointlist, totalheight):
+        y_list = []
+        for element in pointlist: 
+            y_list.append(element[1])
+        return min(y_list)
+
+    def scale(self, pointlist, totalheight): 
+        diff = Sketch.maxheight(self, pointlist, totalheight) - Sketch.minheight(self, pointlist, totalheight)
+        return totalheight / diff
+
+    def total_energy(self, totalheight, mass): 
+        return totalheight * mass * 9.81 
+
+class Point: 
+    def central_angle(self, position, pointlist):
+        x1 = pointlist[position-1][0]
+        y1 = pointlist[position-1][1]
+        x2 = pointlist[position][0]
+        y2 = pointlist[position][1]
+        x3 = pointlist[position+1][0]
+        y3 = pointlist[position+1][1]
+        
+        mid_x1 = (x1 + x2) / 2
+        mid_y1 = (y1 + y2) / 2
+        mid_x2 = (x2 + x3) / 2
+        mid_y2 = (y2 + y3) / 2
+
+        if x2 - x1 != 0:
+            slope1 = (y2 - y1) / (x2 - x1)
+        else:
+            slope1 = None  
+
+        if x3 - x2 != 0:
+            slope2 = (y3 - y2) / (x3 - x2)
+        else:
+            slope2 = None  
+
+        perp_slope1 = -1 / slope1 if slope1 is not None and slope1 != 0 else 0 
+        perp_slope2 = -1 / slope2 if slope2 is not None and slope2 != 0 else 0 
+
+        if slope1 is not None and slope2 is not None and slope1 - slope2 !=0:
+            c1 = mid_y1 - perp_slope1 * mid_x1
+            c2 = mid_y2 - perp_slope2 * mid_x2
+            center_x = (c2 - c1) / (perp_slope1 - perp_slope2)
+            center_y = perp_slope1 * center_x + c1
+        elif slope1 is None and slope2 is not None: 
+            center_x = mid_x1
+            center_y = perp_slope2 * center_x + (mid_y2 - perp_slope2 * mid_x2)
+        elif slope2 is None and slope1 is not None:  
+            center_x = mid_x2
+            center_y = perp_slope1 * center_x + (mid_y1 - perp_slope1 * mid_x1)
+        elif slope1 is not None and slope2 is not None and slope1 == slope2: 
+            c1 = mid_y1 - perp_slope1 * mid_x1
+            c2 = mid_y2 - perp_slope2 * mid_x2
+            center_x = (c2 - c1) / (0.000001)
+            center_y = perp_slope1 * center_x + c1
+            return 0, 10
+        else: 
+            center_x = mid_x1
+            center_y = mid_y1
+
+        radius = math.sqrt((center_x - x1)**2 + (center_y - y1)**2)
+        #if radius ==0: 
+            #radius = 0.000001
+
+        vector_a = (x1 - center_x, y1 - center_y)
+        vector_b = (x3 - center_x, y3 - center_y)
+
+        dot_product = vector_a[0] * vector_b[0] + vector_a[1] * vector_b[1]
+        magnitude_a = math.sqrt(vector_a[0]**2 + vector_a[1]**2)
+        magnitude_b = math.sqrt(vector_b[0]**2 + vector_b[1]**2)
+
+        if magnitude_a != 0 and magnitude_b != 0: 
+            angle = math.acos(dot_product / (magnitude_a * magnitude_b))
+        else: 
+            angle = 0
+
+        return radius, angle
+
+    def slope(self, position, pointlist): 
+        x1 = pointlist[position-1][0]
+        y1 = pointlist[position-1][1]
+        x2 = pointlist[position][0]
+        y2 = pointlist[position][1]
+        x3 = pointlist[position+1][0]
+        y3 = pointlist[position+1][1]
+
+        if x2 - x1 != 0: 
+            slope1 = (y2 - y1) / (x2 - x1)
+        else: 
+            slope1 = 1000
+        if x3 - x2 != 0: 
+            slope2 = (y3 - y2) / (x3 - x2)
+        else: 
+            slope2 = 1000
+        return (slope1+slope2)/2
+
+    def x_direction(self, position, pointlist):
+        x1 = pointlist[position][0]
+        x2 = pointlist[position+1][0]
+        if x2 - x1 >= 0: 
+            return 1
+        else: 
+            return -1
+
+    def angle_of_incline(self, position, pointlist): 
+        slope = self.slope(position, pointlist)
+        if slope == 0: 
+            return 0
+        else: 
+            return math.atan(slope)
+
+    def height(self, pointlist, position): 
+        return pointlist[position].split(",")[1]
+    
+    def velocity(self, position, totalheight, mass): 
+        sketch_given = Sketch()
+        total_energy = sketch_given.total_energy(totalheight, mass)
+        potential_energy = position * mass * 9.81
+        kinetic_energy = total_energy - potential_energy
+        velocity = math.sqrt(abs(2 * kinetic_energy / mass))
+        return velocity
+
+    def arc_length(self, pointlist, position): 
+        radius, angle = Point.central_angle(self, position, pointlist)
+        arc_length = radius * angle
+        return arc_length
+
+    def time(self, position, arc_length, velocity): 
+        if velocity == 0: 
+            return 0
+        else: 
+            return arc_length / velocity
+
+    def force(self, position, pointlist, totalheight, mass): 
+        radius, angle = Point.central_angle(self, position, pointlist)
+        if radius ==0: 
+            return 0
+        velocity = Point.velocity(self, position, totalheight, mass)
+        arc_length = Point.arc_length(self, pointlist, position)
+        time = Point.time(self, position, arc_length, velocity)
+        centripetal_a = velocity**2 / radius
+        centripetal_f = centripetal_a * mass 
+        gravitational_f = mass * 9.81 
+        normal_f = self.x_direction(position, pointlist)*gravitational_f + centripetal_f
+        return normal_f
+
+    def colour(self, force, force_list):
+        ilist_mean = np.mean(force_list)
+        ilist_std = np.std(force_list)
+        ilist_max = np.max(remove_outliers(force_list))
+        ilist_min = np.min(remove_outliers(force_list))
+        #if force >= ilist_mean + 2*ilist_std:
+        #if force >= 900: 
+        #if force >= ilist_min + 3/4*(ilist_max - ilist_min):
+        if force > statistics.median(remove_outliers(force_list[:round(len(force_list) / 2)])):
+            colour = "red"
+        #elif force >= ilist_mean + ilist_std:
+        #elif force >= 400:
+        #elif force >= ilist_min + 1/2*(ilist_max - ilist_min):
+        elif force >= statistics.median(remove_outliers(force_list)): 
+            colour = "orange"
+        #elif force >= ilist_mean:
+        #elif force >= 100:
+        #elif force >= ilist_min + 1/4*(ilist_max - ilist_min):
+        elif force >= statistics.median(remove_outliers(force_list[round(len(force_list) / 2):])):
+            colour = "yellow"
+        elif force >= ilist_min:
+            colour = "green"
+        else: 
+            colour = "black"
+        return colour
+        
+def main():  
+    initial_instruction()
+    root = tk.Tk()
+    drawing = DrawingApp(root)
+    root.mainloop()
+    pointlist = drawing.listsave()
+        
+    totalheight = float(input("Enter the height of the tallest point of the roller coaster in m: "))
+    mass = float(input("Enter the mass of the roller coaster car in kg: "))
+
+    point = Point()
+    force_list = []
+    
+    for i in range (1, math.ceil(len(pointlist))-1): 
+        position = i
+        force = point.force(position, pointlist, totalheight, mass)
+        force_list.append(force)
+
+    print(statistics.median(remove_outliers(force_list[round(len(force_list) / 2): ])))
+    print(statistics.median(remove_outliers(force_list)))
+    print(statistics.median(remove_outliers(force_list[ :round(len(force_list) / 2)])))
+    
+    for position in range(1, len(pointlist)-2): 
+        x1 = pointlist[position][0]
+        y1 = pointlist[position][1]
+        x2 = pointlist[position+1][0]
+        y2 = pointlist[position+1][1]
+
+        min_x, max_x, min_y, max_y = drawing.get_drawing_bounds()
+
+        screen = turtle.Screen()
+        screen.setup(width=max_x - min_x + 100, height=max_y - min_y + 100)
+        screen.bgcolor("white")
+        screen.title("Roller Coaster Simulator")
+        offset_x = (max_x + min_x) / 2
+        offset_y = (max_y + min_y) / 2
+
+        t = turtle.Turtle()
+        t.pencolor(point.colour(force_list[position], force_list))
+        t.penup()
+        t.goto(x1 - offset_x, y1 - offset_y)
+        t.pendown()
+        t.goto(x2 - offset_x, y2 - offset_y)
+    time.sleep(10)
+    turtle.done()
+
+main()
